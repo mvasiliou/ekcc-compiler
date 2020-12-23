@@ -1,0 +1,14 @@
+# This is a comment
+extern int arg(int);
+extern float argf(int);
+
+
+
+def int run () {
+    int $n = arg(0);
+    print $n;
+
+    
+    return $n;
+}
+

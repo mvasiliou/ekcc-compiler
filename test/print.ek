@@ -1,0 +1,9 @@
+# This is a comment
+extern int getarg(int);
+extern float getargf(int);
+
+def int run () {
+    print(1);
+    return 0;
+}
+

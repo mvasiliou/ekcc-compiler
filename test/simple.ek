@@ -1,0 +1,35 @@
+# This is a comment
+extern int getarg(int);
+extern float getargf(int);
+
+
+
+def int run () {
+    int $a = 1 + 2;
+    int $b = 2 - 1;
+    
+    int $n = $a + $b;
+    
+
+    $b = 2 * 1;
+    $b = 2 / 1;
+
+
+    bool $c = 2 < 1;
+    $c = 2 > 1;
+    $c = 2 == 1;
+
+    bool $d = true;
+
+    bool $e = true && true;
+    bool $f = $c && $d;
+
+    bool $g = true || false;
+    $g = $g || $g;
+
+    bool $h = !true;
+    bool $i = !$h;
+
+    return $n;
+}
+

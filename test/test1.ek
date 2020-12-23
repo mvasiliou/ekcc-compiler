@@ -1,0 +1,50 @@
+# This is a comment
+extern cint arg(int);
+extern float argf(int);
+
+def cint fib (int $n) {
+    if ($n < 2) {
+        if ($n == 0)
+            return 0;
+        else
+            return 1;
+    }
+
+    cint $a = fib ($n - 1);
+    cint $b = fib ($n - 2);
+    return $a + $b;
+}
+
+def void inc (ref cint $n) {
+  $n = $n + 1;
+}
+
+def void things (ref cint $n) {
+  if ($n < 4) {
+    return;
+  }
+  while (!($n > 100)) {
+    $n = $n * $n - 2;
+  }
+}
+
+def int run () {
+    cint $a = arg(0);
+    print "Input arg:";
+    print $a;
+
+    cint $val = fib($a);
+    print $val;
+    
+    print "fib(5)+1:";
+    inc($val);
+    print $val;
+
+    print "something else:";
+    things($val);
+    print $val;
+
+
+    return 0;
+}
+

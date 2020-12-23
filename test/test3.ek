@@ -1,0 +1,88 @@
+# This is a comment
+extern int arg(int);
+extern float argf(int);
+
+def cint add_one(cint $n) {
+    cint $a = $n + 1;
+    return $a;
+}
+
+def cint mul_two(cint $n) {
+    cint $a = $n * 2;
+    return $a;
+}
+
+def cint sub_one(cint $n) {
+    cint $a = $n - 1;
+    return $a;
+}
+
+def int sub_one_int(int $n) {
+    int $a = $n - 1;
+    return $a;
+}
+
+def int negate(int $n) {
+    int $a = -$n;
+    return $a;
+}
+
+
+
+def int run () {
+    print "add_one(5):";
+    cint $a = add_one(5);
+    print $a;
+
+    print "add_one(2147483646):";
+    int $b = add_one(2147483646);
+    print $b;
+
+    # Half of (MAX_INT + 1) / 2 - 1
+    print "mul_two(1073741823):";
+    cint $c = mul_two(1073741823);
+    print $c;
+
+    print "sub_one(2):";
+    cint $d = sub_one(2);
+    print $d;
+
+
+    print "negate(1):";
+    cint $e = negate(1);
+    print $e;
+
+    # All of the below will fail
+    #print "add_one(2147483647):";
+    #cint $add_max_int = add_one(2147483647);
+    #print $add_max_int;
+
+    #print "mul_two(2147483647):";
+    #cint $mul_max_int = mul_two(2147483647);
+    #print $mul_max_int;
+
+    #print "mul_two(-2147483647):";
+    #cint $mul_min_int = mul_two(-2147483647);
+    #print $mul_min_int;
+
+    #print "sub_one(-2147483648):";
+    #cint $sub_min_int = sub_one(-2147483648);
+    #print $sub_min_int;
+
+    #print "negate(-2147483648):";
+    #cint $negate_int_min = negate(-2147483648);
+    #print $negate_int_min;
+
+    #print "Result of 20 / 0:";
+    #cint $zero = 0;
+    #cint $random = 20;
+    #cint $result = $random / $zero;
+    #print $result;
+
+    #print "Result of -2147483648 / -1:";
+    #cint $int_min = -2147483648;
+    #cint $int_min_neg_div = $int_min / -1;
+    #print $int_min_neg_div;
+
+    return 0;
+}

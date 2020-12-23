@@ -1,0 +1,16 @@
+# This is a comment
+extern int arg(int);
+extern float argf(int);
+
+def void add(ref int $n) {
+  $n = $n + 1;
+}
+
+def int run () {
+   int $a = 1;
+   while ($a < 1000000000) {
+        add($a);
+   }
+   print $a;
+   return 0;
+}

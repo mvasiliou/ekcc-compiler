@@ -1,0 +1,30 @@
+# This is a comment
+extern int arg(int);
+extern float argf(int);
+
+def int run () {
+   int $a = 1;
+
+   int $b = 1;
+   int $c = 1;
+   int $d = 1;
+   int $e = 1;
+   int $f = 1;
+   int $g = 1;
+   int $h = 1;
+
+   while ($a < 1000000000) {
+        $a = $a + 1;
+
+        $b = $a + 5;
+        $c = $a + 5;
+        $d = $a + 5;
+        $e = $a + 5;
+        $f = $a + 5;
+        $g = $a + 5;
+        $h = $a + 5;
+
+   }
+   print $a;
+   return 0;
+}

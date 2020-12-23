@@ -1,0 +1,27 @@
+# This is a comment
+extern int arg(int);
+extern float argf(int);
+
+def int fib (int $n) {
+    if ($n < 2) {
+        if ($n == 0)
+            return 0;
+        else
+            return 1;
+    }
+
+    int $a = fib ($n - 1);
+    int $b = fib ($n - 2);
+    return $a + $b;
+}
+
+def int run () {
+    cint $a = arg(0);
+    print "Input arg:";
+    print $a;
+
+    int $val = fib($a);
+    print $val;
+    return 0;
+}
+

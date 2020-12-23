@@ -1,0 +1,17 @@
+# This is a comment
+extern int arg(int);
+extern float argf(int);
+
+def int run () {
+   int $a = 1;
+   int $b = 1;
+   while ($a < 1000000000) {
+        $a = $a + 1 + 2;
+        $b = 4 + 5;
+        $b = 7 + 13;
+        $b = 12 - 2;
+        $b = 19 * 7;
+   }
+   print $a;
+   return 0;
+}

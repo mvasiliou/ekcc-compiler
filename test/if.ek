@@ -1,0 +1,23 @@
+# This is a comment
+extern int getarg(int);
+extern float getargf(int);
+
+
+
+def int run () {
+    if (true) {
+        int $a = 1 + 2;
+    }
+
+    int $a = 1;
+    if ($a == 1) {
+        if ($a == 0)
+            return 0;
+        else
+            return 1;
+    }
+
+    
+    return 0;
+}
+

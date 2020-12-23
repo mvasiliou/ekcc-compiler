@@ -1,0 +1,21 @@
+# This is a comment
+extern int getarg(int);
+extern float getargf(int);
+
+
+
+def int run () {
+    float $a = 1.1;
+    float $b = 1.1 + 2.2;
+
+    $b = 3.0 - 4.5;
+    $b = 15.9 * 12.0;
+    $b = 12.0 / 4.0;
+
+    bool $c = 1.1 < 2.0;
+    $c = 1.2 > 2.0;
+    $c = 1.2 == 1.2;
+
+    return 0;
+}
+
