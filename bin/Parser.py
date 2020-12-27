@@ -1,20 +1,24 @@
-import ply.yacc
-import Lexer
 from collections import namedtuple
-import yaml
-import logging
-import sys
-import llvmlite.ir as ir
 import datetime
+import llvmlite.ir as ir
+import logging
+import ply.yacc
+import sys
+import yaml
+
+import Lexer
+
 
 FUNCTION_VAR_TYPES = {}
-
 
 class Node(object):
 
     INT_MIN = ir.Constant(ir.IntType(32), -2147483648)
 
     def _get_ir_type(self, ast_type):
+        """
+        Translates an EK type into a LLVM IR type
+        """
         if 'ref' in ast_type:
             base_type = self._get_ir_type(ast_type.replace('ref ', ''))
             return ir.PointerType(base_type)
@@ -29,6 +33,9 @@ class Node(object):
         raise Exception('Unable to find LLVM type for: ' + ast_type)
 
     def _exit_program(self, module, builder, scope):
+        """
+        Handles exit code return for program
+        """
         func = scope.get('exit')
         args = [ir.Constant(ir.IntType(32), 1)]
         builder.call(func, args)
@@ -59,6 +66,9 @@ class Program(Node):
             sys.exit(1)
 
     def visit(self, module, scope, extra_args):
+        """
+        Visits each node of tree to translate to IR
+        """
         if type(self.externs) != list:
             self.externs.visit(module, scope, extra_args)
         self.funcs.visit(module, scope)
@@ -68,6 +78,9 @@ class Program(Node):
 
 
 class ExternList(Node):
+    """
+    Parent node to hold list of all "extern" usages
+    """
     name = 'externs'
 
     def __init__(self, extern):
@@ -75,14 +88,24 @@ class ExternList(Node):
         self._name = 'externs'
 
     def add_extern(self, extern):
+        """
+        Adds extern to the list of externs
+        """
         self.externs.append(extern)
 
     def visit(self, module, scope, extra_args):
+        """
+        Visits each node of tree to translate to IR
+        """
         for extern in self.externs:
             extern.visit(module, scope, extra_args)
 
-class Extern(Node):
 
+class Extern(Node):
+    """
+    Models an individual usage of "extern"
+    ex: extern float argf(int);
+    """
     def __init__(self, ret_type, globid, tdecls):
         self.ret_type = ret_type
         self.globid = globid
@@ -90,37 +113,48 @@ class Extern(Node):
         self._name = 'extern'
 
     def visit(self, module, scope, extra_args):
+        """
+        Visits each node of tree to translate to IR
+        """
         if self.globid == 'arg':
             self._add_arg_function(module, scope, extra_args)
         if self.globid == 'argf':
             self._add_argf_function(module, scope, extra_args)
 
     def _add_arg_function(self, module, scope, extra_args):
+        """
+        Handles extern usages of the form: extern int arg(int);
+        """
         for arg in extra_args:
             if '.' in arg:
-                logging.error('Attempting to pass in float while using arg')
+                logging.error('Attempting to pass in float while using arg. Use argf for floats')
                 sys.exit(1)
 
-        arg_ty = ir.IntType(32)
-        f_ty = ir.FunctionType(ir.IntType(32), [arg_ty], var_arg=True)
-        arg = ir.Function(module, f_ty, name="arg")
+        arg_type = ir.IntType(32)
+        function_type = ir.FunctionType(ir.IntType(32), [arg_type], var_arg=True)
+        arg = ir.Function(module, function_type, name="arg")
         scope['arg'] = arg
 
         block = arg.append_basic_block(name="entry")
         builder = ir.IRBuilder(block)
 
+        # Matches additional arguments with their index
         for i, x in enumerate(extra_args):
             index = ir.Constant(ir.IntType(32), i)
             cond = builder.icmp_signed('==', arg.args[0], index, name='equal')
 
             with builder.if_then(cond) as conditional:
                 builder.ret(ir.Constant(ir.IntType(32), int(x)))
+
         builder.ret(ir.Constant(ir.IntType(32), 0))
 
     def _add_argf_function(self, module, scope, extra_args):
-        arg_ty = ir.IntType(32)
-        f_ty = ir.FunctionType(ir.FloatType(), [arg_ty], var_arg=True)
-        arg = ir.Function(module, f_ty, name="argf")
+        """
+        Handles extern usages of the form: extern float argf(int);
+        """
+        arg_type = ir.IntType(32)
+        function_type = ir.FunctionType(ir.FloatType(), [arg_type], var_arg=True)
+        arg = ir.Function(module, function_type, name="argf")
         scope['argf'] = arg
 
         block = arg.append_basic_block(name="entry")
@@ -134,21 +168,33 @@ class Extern(Node):
                 builder.ret(ir.Constant(ir.FloatType(), float(x)))
         builder.ret(ir.Constant(ir.FloatType(), 0.0))
 
-class FuncList(Node):
 
+class FuncList(Node):
+    """
+    Parent node handling list of all functions
+    """
     def __init__(self, func):
         self.funcs = [func]
 
     def add_func(self, func):
+        """
+        Add an extra function
+        """
         self.funcs.append(func)
 
     def visit(self, module, scope):
+        """
+        Visits each node of tree to translate to IR
+        """
         for func in self.funcs:
             func.visit(module, scope)
 
 
 class Function(Node):
-
+    """
+    Models a single function definition
+    ex: def int run () {
+    """
     def __init__(self, ret_type, globid, blk, vdecls):
         self.ret_type = ret_type
         self.globid = globid
@@ -167,25 +213,39 @@ class Function(Node):
             FUNCTION_VAR_TYPES[self.globid] = {}
 
     def visit(self, module, scope):
+        """
+        Visits each node of tree to translate to IR
+        """
+        # Return type of the function
         llvm_ret_type = self._get_ir_type(self.ret_type)
+        # Type of each argument in the function
         arguments = [arg.llvm_vtype for arg in self.vdecls.vars]
-        fnty = ir.FunctionType(llvm_ret_type, arguments)
-        func = ir.Function(module, fnty, name=self.globid)
+
+        function_type = ir.FunctionType(llvm_ret_type, arguments)
+        func = ir.Function(module, function_type, name=self.globid)
+
+        # Put in scope so that identifier is not reused
         scope[self.globid] = func
-        local_scope = {k:v for k,v in scope.items()}
+
+        # Copy of scope so that new adds in lower levels of scope do not bubble up
+        local_scope = {k: v for k, v in scope.items()}
         block = func.append_basic_block(name="entry")
         builder = ir.IRBuilder(block)
 
+        # Ensure arguments are registered in scope
         for x, arg in enumerate(self.vdecls.vars):
             local_scope[arg.var] = func.args[x]
 
+        # Visit nodes in the block below
         self.blk.visit(builder, module, func, local_scope)
         if self.ret_type == 'void':
             builder.ret_void()
 
 
 class VDeclList(Node):
-
+    """
+    Parent node to handle a list of variable declarations
+    """
     def __init__(self, vdecl=None):
         if vdecl is None:
             self.vars = []
@@ -198,7 +258,9 @@ class VDeclList(Node):
 
 
 class VariableDecl(Node):
-
+    """
+    A single variable declaration
+    """
     def __init__(self, vtype, var):
         self.vtype = vtype
         self.var = var
@@ -214,26 +276,40 @@ class VariableDecl(Node):
 
 
 class StatementList(Node):
-
+    """
+    Parent node for a list of statements
+    """
     def __init__(self, stmt):
         self.stmts = [stmt]
         self._name = 'stmts'
 
     def add_stmt(self, stmt):
+        """
+        Add new statement
+        """
         self.stmts.append(stmt)
 
     def visit(self, builder, module, block, scope):
+        """
+        Visits each node of tree to translate to IR
+        """
         for statement in self.stmts:
             statement.visit(builder, module, block, scope)
 
 
 class Block(Node):
+    """
+    A block of code (within a function, if statement or loop)
+    """
     count = 0
     def __init__(self, statements):
         self.contents = statements
         self._name = 'blk'
 
     def visit(self, builder, module, block, scope):
+        """
+        Visits each node of tree to translate to IR
+        """
         self.count += 1
         local_scope = {k:v for k,v in scope.items()}        
         if type(self.contents) == list and len(self.contents) == 0:
@@ -242,20 +318,28 @@ class Block(Node):
 
 
 class IfStatement(Node):
-
+    """
+    Handles a conditional with just one branch
+    """
     def __init__(self, cond, stmt):
         self.cond = cond
         self.stmt = stmt
         self._name = 'if'
 
     def visit(self, builder, module, block, scope):
+        """
+        Visits each node of tree to translate to IR
+        """
         condition = self.cond.visit(builder, module, block, scope)
-
+        # Builds check for condition and gates statement behind true value
         with builder.if_then(condition) as conditional:
             self.stmt.visit(builder, module, block, scope)
 
-class IfElseStatement(Node):
 
+class IfElseStatement(Node):
+    """
+    Handles conditional with branches for true or false
+    """
     def __init__(self, cond, stmt, else_stmt):
         self.cond = cond
         self.stmt = stmt
@@ -263,6 +347,9 @@ class IfElseStatement(Node):
         self._name = 'if'
 
     def visit(self, builder, module, block, scope):
+        """
+        Visits each node of tree to translate to IR
+        """
         condition = self.cond.visit(builder, module, block, scope)
 
         with builder.if_else(condition) as (then, otherwise):
@@ -273,26 +360,35 @@ class IfElseStatement(Node):
 
 
 class WhileStatement(Node):
-
+    """
+    Handles a loop that executes while a condition is true
+    """
     def __init__(self, cond, stmt):
         self.cond = cond
         self.stmt = stmt
         self._name = 'while'
 
     def visit(self, builder, module, block, scope):
+        """
+        Visits each node of tree to translate to IR
+        """
         new_block = builder.append_basic_block(name="while")
         block_builder = ir.IRBuilder(new_block)
         builder.branch(new_block)
-        
+
         condition = self.cond.visit(block_builder, module, block, scope)
         with block_builder.if_then(condition) as conditional:
             self.stmt.visit(block_builder, module, new_block, scope)
+            # Allows re-evaluation of conditional statement at end of the loop
             block_builder.branch(new_block)
             builder.position_at_end(conditional)
 
 
 class BinOp(Node):
-
+    """
+    Handles a binary operation
+    ex: 1 + 2
+    """
     def __init__(self, op, lhs, rhs):
         self.op = op
         self.lhs = lhs
@@ -300,6 +396,9 @@ class BinOp(Node):
         self._name = 'binop'
 
     def get_vtype(self, local_scope):
+        """
+        Identifies the output type of the operation (could be bool or int)
+        """
         left = self.lhs.get_vtype(local_scope).replace('ref ', '').replace('noalias ', '')
         right = self.rhs.get_vtype(local_scope).replace('ref ', '').replace('noalias ', '')
 
@@ -310,6 +409,7 @@ class BinOp(Node):
             self.vtype = 'bool'
             return self.vtype
 
+        # Ensures that if operation is arithmetic, both types are equivalent
         if (left == 'cint' and right == 'int') or (left == 'int' and right == 'cint'):
             self.vtype = 'cint'
         elif left != right:
@@ -322,6 +422,9 @@ class BinOp(Node):
         return self.vtype
 
     def visit(self, builder, module, block, scope):
+        """
+        Visits each node of tree to translate to IR.
+        """
         left = self.lhs.visit(builder, module, block, scope)
         right = self.rhs.visit(builder, module, block, scope)
 
@@ -331,27 +434,14 @@ class BinOp(Node):
         if getattr(right.type, 'pointee', None) is not None:
             right = builder.load(right)
 
-        # These could be floats
         if self.op == 'lt':
-            if self.left_vtype == 'float':
-                func = builder.fcmp_ordered
-            else:
-                func = builder.icmp_signed
-            return func('<', left, right, name='less_than')
+            return self._visit_lt(builder, left, right)
 
         if self.op == 'gt':
-            if self.left_vtype == 'float':
-                func = builder.fcmp_ordered
-            else:
-                func = builder.icmp_signed
-            return func('>', left, right, name='great_than')
+            return self._visit_gt(builder, left, right)
 
         if self.op == 'eq':
-            if self.left_vtype == 'float':
-                func = builder.fcmp_ordered
-            else:
-                func = builder.icmp_signed
-            return func('==', left, right, name='equal_to')
+            return self._visit_eq(builder, left, right)
 
         if self.op == 'and':
             return builder.and_(left, right, name='and')
@@ -360,67 +450,16 @@ class BinOp(Node):
             return builder.or_(left, right, name='or')
 
         if self.op == 'mul':
-            if self.vtype == 'float':
-                func = builder.fmul
-            elif self.vtype == 'cint':
-                func = builder.smul_with_overflow
-                func_proper = builder.mul
-                return self._checked_overflow_arith(module, scope, builder, left, right, 
-                                                    func, func_proper, 'mul')
-            else:
-                func = builder.mul
-                
-            return func(left, right, name='mul')
+            return self._visit_mul(builder, left, right)
 
         if self.op == 'div':
-            zero = ir.Constant(ir.IntType(32), 0)
-            condition = builder.icmp_signed('==', right, zero, name='oflow_check')
-            with builder.if_then(condition) as conditional:
-                self._exit_program(module, builder, scope)
-
-            if self.vtype == 'float':
-                func = builder.fdiv
-            else:
-                neg1 = ir.Constant(ir.IntType(32), -1)
-                neg_condition = builder.icmp_signed('==', right, neg1, name='neg1_check')
-                int_min_cond = builder.icmp_signed('==', left, self.INT_MIN, name='int_min_check')
-
-                condition = builder.and_(neg_condition, int_min_cond)
-
-                with builder.if_then(condition) as conditional:
-                    self._exit_program(module, builder, scope)
-
-
-                with builder.if_then(condition) as conditional:
-                    self._exit_program(module, builder, scope)
-
-                func = builder.sdiv
-
-            return func(left, right, name='div')
+            return self._visit_div(builder, left, right)
 
         if self.op == 'add':
-            if self.vtype == 'float':
-                func = builder.fadd
-            elif self.vtype == 'cint':
-                func = builder.sadd_with_overflow
-                func_proper = builder.add
-                return self._checked_overflow_arith(module, scope, builder, left, right, 
-                                                    func, func_proper, 'add')
-            else:
-                func = builder.add
-            return func(left, right, name='add')
+            return self._visit_add(builder, left, right)
 
         if self.op == 'sub':
-            if self.vtype == 'float':
-                func = builder.fsub
-            elif self.vtype == 'cint':
-                func = builder.ssub_with_overflow
-                func_proper = builder.sub
-                return self._checked_overflow_arith(module, scope, builder, left, right, 
-                                                    func, func_proper, 'sub')
-            else:
-                func = builder.sub
-            return func(left, right, name='sub')
+            return self._visit_sub(builder, left, right)
 
         if self.op == '=':
             pointer = scope[self.lhs.var]
@@ -428,7 +467,122 @@ class BinOp(Node):
 
         raise Exception('Cannot define BinOp LLVM method: ' + self.op)
 
+    def _visit_lt(self, builder, left, right):
+        """
+        Handles less than operations.
+        Ex: 1 < 7
+        """
+        if self.left_vtype == 'float':
+            func = builder.fcmp_ordered
+        else:   
+            func = builder.icmp_signed
+        return func('<', left, right, name='less_than')
+
+    def _visit_gt(self, builder, left, right):
+        """
+        Handles greater than operations.
+        Ex: 1 > 7
+        """
+        if self.left_vtype == 'float':
+            func = builder.fcmp_ordered
+        else:
+            func = builder.icmp_signed
+        return func('>', left, right, name='great_than')
+
+    def _visit_eq(self, builder, left, right):
+        """
+        Handles equality operations.
+        Ex: 1 == 7
+        """
+        if self.left_vtype == 'float':
+            func = builder.fcmp_ordered
+        else:
+            func = builder.icmp_signed
+        return func('==', left, right, name='equal_to')
+
+    def _visit_mul(self, builder, left, right):
+        """
+        Handles multiplication operations.
+        Ex: 1 * 7
+        """
+        if self.vtype == 'float':
+            func = builder.fmul
+        elif self.vtype == 'cint':
+            func = builder.smul_with_overflow
+            func_proper = builder.mul
+            return self._checked_overflow_arith(module, scope, builder, left, right, 
+                                                func, func_proper, 'mul')
+        else:
+            func = builder.mul
+                
+        return func(left, right, name='mul')
+
+    def _visit_div(self, builder, left, right):
+        """
+        Handles division operations. Checks for division by zero
+        Ex: 1 / 7
+        """
+        zero = ir.Constant(ir.IntType(32), 0)
+        condition = builder.icmp_signed('==', right, zero, name='oflow_check')
+        with builder.if_then(condition) as conditional:
+            self._exit_program(module, builder, scope)
+
+        if self.vtype == 'float':
+            func = builder.fdiv
+        else:
+            neg1 = ir.Constant(ir.IntType(32), -1)
+            neg_condition = builder.icmp_signed('==', right, neg1, name='neg1_check')
+            int_min_cond = builder.icmp_signed('==', left, self.INT_MIN, name='int_min_check')
+
+            condition = builder.and_(neg_condition, int_min_cond)
+
+            with builder.if_then(condition) as conditional:
+                self._exit_program(module, builder, scope)
+
+
+            with builder.if_then(condition) as conditional:
+                self._exit_program(module, builder, scope)
+
+            func = builder.sdiv
+
+        return func(left, right, name='div')
+
+    def _visit_add(self, builder, left, right):
+        """
+        Handles addition operations. 
+        Ex: 1 + 7
+        """
+        if self.vtype == 'float':
+            func = builder.fadd
+        elif self.vtype == 'cint':
+            func = builder.sadd_with_overflow
+            func_proper = builder.add
+            return self._checked_overflow_arith(module, scope, builder, left, right, 
+                                                func, func_proper, 'add')
+        else:
+            func = builder.add
+        return func(left, right, name='add')
+
+    def _visit_sub(self, builder, left, right):
+        """
+        Handles subtraction operations. 
+        Ex: 1 - 7
+        """
+        if self.vtype == 'float':
+            func = builder.fsub
+        elif self.vtype == 'cint':
+            func = builder.ssub_with_overflow
+            func_proper = builder.sub
+            return self._checked_overflow_arith(module, scope, builder, left, right, 
+                                                func, func_proper, 'sub')
+        else:
+            func = builder.sub
+        return func(left, right, name='sub')
+
     def _checked_overflow_arith(self, module, scope, builder, left, right, func, func_proper, name):
+        """
+        Checks for overflow errors in arithmetic
+        """
         oflow_type = ir.LiteralStructType((ir.IntType(32), ir.IntType(1)))
         pointer = builder.alloca(oflow_type)
 
@@ -457,12 +611,19 @@ class BinOp(Node):
 
 
 class ReturnStatement(Node):
+    """
+    Handles evaluation of return statement from a function.
+    Ex: return 0;
+    """
 
     def __init__(self, exp):
         self.exp = exp
         self._name = 'ret'
 
     def visit(self, builder, module, block, scope):
+        """
+        Visits each node of tree to translate to IR.
+        """
         if self.exp is None:
             builder.ret_void()
             return
@@ -474,7 +635,9 @@ class ReturnStatement(Node):
 
 
 class VDeclStatement(Node):
-
+    """
+    Handles declaration of variable
+    """
     def __init__(self, vdecl, exp):
         self.vdecl = vdecl
         self.exp = exp
@@ -488,7 +651,9 @@ class VDeclStatement(Node):
 
 
 class PrintStatement(Node):
-
+    """
+    Handles native print statement for non-string literals
+    """
     _is_setup = False
     def __init__(self, exp):
         self.exp = exp
@@ -526,7 +691,9 @@ class PrintStatement(Node):
 
 
 class PrintSLiteral(Node):
-
+    """
+    Handles native print statement for string literals
+    """
     _is_setup = False
     def __init__(self, string):
         self.string = string[1:-1]
@@ -553,6 +720,9 @@ class PrintSLiteral(Node):
         PrintSLiteral._is_setup = True
 
     def visit(self, builder, module, block, scope):
+        """
+        Visits each node of tree to translate to IR.
+        """
         func = scope.get('print')
         self._setup(module, builder)
         
@@ -569,7 +739,9 @@ class PrintSLiteral(Node):
 
 
 class CastStatement(Node):
-
+    """
+    Handles cast of one type to another
+    """
     def __init__(self, a, b):
         self.casttype = a
         self.expr = b
@@ -577,7 +749,10 @@ class CastStatement(Node):
 
 
 class UOP(Node):
-
+    """
+    Handles unary operation.
+    Ex: -7 or !8
+    """
     def __init__(self, op, expr):
         self.op = op
         self.expr = expr
@@ -588,37 +763,45 @@ class UOP(Node):
         return self.vtype
 
     def visit(self, builder, module, block, scope):
+        """
+        Visits each node of tree to translate to IR.
+        """
         expr = self.expr.visit(builder, module, block, scope)
         if getattr(expr.type, 'pointee', None) is not None:
             expr = builder.load(expr)
+        # Handles !condition statements
         if self.op == '!':
             return builder.not_(expr)
         else:
+            # Handles negation statements and checks for overflow
             condition = builder.icmp_signed('==', expr, self.INT_MIN, name='oflow_check')
             with builder.if_then(condition) as conditional:
                 self._exit_program(module, builder, scope)
 
             return builder.neg(expr)
 
-class FuncCall(Node):
 
+class FuncCall(Node):
+    """
+    Handles calling of a function within a block
+    """
     def __init__(self, globid, params):
         self.globid = globid
         self.params = params
         self._name = 'funccall'
 
-    def get_vtype_fake(self, local_scope):
-        self.vtype = 'int'
-        return self.vtype
-
     def visit(self, builder, module, block, scope):
+        """
+        Visits each node of tree to translate to IR.
+        """
         func = scope.get(self.globid)
-
+        # Ensure function is within scope
         if func is None:
             logging.error('Attempting to use function before declaration: ' + self.globid)
             sys.exit(1)
         args = [p.visit(builder, module, block, scope) for p in self.params]
 
+        # match up arguments with their index and derefernece pointers
         for i, x in enumerate(args):
             pointer = getattr(func.args[i].type, 'pointee', None)
             arg_pointer = getattr(x.type, 'pointee', None)
@@ -634,12 +817,17 @@ class FuncCall(Node):
 
 
 class Literal(Node):
-
+    """
+    Handles literal values, such as integers or booleans
+    """
     def __init__(self, value):
         self.value = value
         self._name = 'lit'
 
     def get_vtype(self, local_scope):
+        """
+        Get the type of the instance
+        """
         if self.value == 'true' or self.value == 'false':
             self.vtype = 'bool'
         elif '.' in self.value:
@@ -649,6 +837,9 @@ class Literal(Node):
         return self.vtype
 
     def visit(self, builder, module, block, scope):
+        """
+        Visits each node of tree to translate to IR.
+        """
         if self.vtype == 'float':
             value = float(self.value)
         else:
@@ -657,12 +848,17 @@ class Literal(Node):
 
 
 class VarId(Node):
-
+    """
+    Handles a usage of a variable in a statement
+    """
     def __init__(self, var):
         self.var = var
         self._name = 'varval'
 
     def get_vtype(self, local_scope):
+        """
+        Get the type of the instance
+        """
         if self.var in local_scope:
             self.vtype = local_scope[self.var]
             return self.vtype
@@ -671,12 +867,17 @@ class VarId(Node):
             sys.exit(1)
 
     def visit(self, builder, module, block, scope):
+        """
+        Visits each node of tree to translate to IR.
+        """
         variable = scope[self.var]
         return variable
 
 
 class Parser(object):
-
+    """
+    Defines methods with a BNF grammer to match with nodes of the AST
+    """
     tokens = Lexer.Lexer.tokens
     precedence = (
      ('right', 'EQUAL_SIGN'),
@@ -690,11 +891,14 @@ class Parser(object):
     )
 
     def p_error(self, p):
+        """
+        Handles an error in parsing of tokens
+        """
         if p:
-            print("Syntax error at token", p.type, p.__dict__)
+            logging.info("Syntax error at token", p.type, p.__dict__)
             # Just discard the token and tell the parser it's okay.
         else:
-            print("Syntax error at EOF")
+            logging.info("Syntax error at EOF")
 
     def p_prog(self, p):
         'prog : extern_list func_list'
@@ -969,6 +1173,9 @@ class Parser(object):
         p[0] = VarId(p[1] + p[2])
 
     def validate_statement(self, statement, local_scope):
+        """
+        Ensure that a statement is fully formed and valid
+        """
         if statement._name == 'vardeclstmt':
             variable = statement.vdecl
             if variable.var in local_scope:
@@ -988,6 +1195,9 @@ class Parser(object):
                 pass
 
     def validate_block(self, block, scope):
+        """
+        Validates all blocks and statements within a block
+        """
         local_scope = {k:v for k,v in scope.items()}
         if type(block.contents) == list and len(block.contents) == 0:
             return
@@ -1006,11 +1216,17 @@ class Parser(object):
                 self.validate_statement(s, local_scope)
                 
     def validate(self, tree):
+        """
+        Validates every step of the tree
+        """
         for function in tree.funcs.funcs:
             scope = {v.var: v.vtype for v in function.vdecls.vars}
             self.validate_block(function.blk, scope)
 
     def parse(self, data, lexer):
+        """
+        Passes tokens to the ply.yacc library to parse into an AST based on our rules
+        """
         start = datetime.datetime.utcnow()
         self.parser = ply.yacc.yacc(module=self)
         tree = self.parser.parse(data, lexer=lexer)

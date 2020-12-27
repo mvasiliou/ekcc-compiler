@@ -53,13 +53,8 @@ class Lexer(object):
             , 'SLIT'
              ]    
 
-    #t_INT = r'int'
-    #t_FLOAT = r'float'
-    #t_VOID = r'void'
-    #t_CINT = r'cint'
-    #t_BOOL = r'bool'
+    # Regex patterns to match a token
     t_LITERAL = r'[0-9]+(\.[0-9]+)?'
-    #t_COMMENT = r'\#.*\n'
 
     t_OPEN_PAREN = r'\('
     t_CLOSE_PAREN = r'\)'
@@ -80,7 +75,6 @@ class Lexer(object):
     t_MINUS = r'\-'
     t_DIVIDE = r'\/'
 
-
     # LOGIC OPS
     t_DOUBLE_EQUAL = r'=='
     t_LESS_THAN = r'<'
@@ -93,13 +87,13 @@ class Lexer(object):
     # UNARY OPS
     t_EXCLAMATION = r'!'
 
-
     t_SLIT = '"[^"\n\r]*"'
 
     t_ignore = ' \t'
 
-    reserved = {
-        'extern' : 'EXTERN',
+    # Reserved keywords in the EK language
+    RESERVED = {
+        'extern' :  'EXTERN',
         'def':      'DEF',
         'return':   'RETURN',
         'while':    'WHILE',
@@ -108,41 +102,56 @@ class Lexer(object):
         'print':    'PRINT',
         'ref':      'REF',
         'noalias':  'NOALIAS' 
-     }
-  
+    }
+
+    # Possible native types in EK language
+
+    TYPES = {
+        'int', 'float', 'void', 'cint', 'bool'
+    }
+
+
     def t_IDENTIFIER(self, t):
+        """
+        Used to distinguish between variable names, booleans and reserved keywords
+        """
         r'[a-zA-Z_]+[a-zA-Z0-9_]*'
         if t.value == 'true' or t.value == 'false':
             t.type = 'LITERAL'
             return t
 
-        a = self.reserved.get(t.value)    # Check for reserved words
+        a = self.RESERVED.get(t.value)    # Check for reserved words
         if a is not None:
             t.type = a
             return t
 
-        if t.value in self.types:
+        if t.value in self.TYPES:
             t.type = 'TYPE'
         else:
             t.type = 'IDENTIFIER'
 
         return t
 
-    types = {
-        'int', 'float', 'void', 'cint', 'bool'
-    }
-
     def t_COMMENT(self, t):
+        """
+        Matches an unused line, but increments line number for debugging
+        """
         r'\#.*\n'
         t.lexer.lineno += 1
 
     def t_newline(self, t):
+        """
+        Matches unlimited new line chars and increments line number
+        """
         r'\n+'
         t.lexer.lineno += len(t.value)
 
     def t_error(self, t):
+        """
+        Catches any unknown input and exits
+        """
         line = t.value.split('\n')[0]
-        logging.info('Unlexable input at line: {i} character: {c} \n {o}'
+        logging.error('Unlexable input at line: {i} character: {c} \n {o}'
             .format(i=t.lexer.lineno, c=t.lexer.lexpos, o=line))
         sys.exit(0)
 

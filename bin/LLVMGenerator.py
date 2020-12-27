@@ -1,12 +1,14 @@
+from ctypes import CFUNCTYPE, c_int
+import datetime
 import llvmlite.ir as ir
 import llvmlite.binding as binding
-from ctypes import CFUNCTYPE, c_int
 import logging
-import datetime
 
 
 class LLVMGenerator(object):
-
+    """
+    Translates an AST into LLVM IR
+    """
     def __init__(self):
         binding.initialize()
         binding.initialize_native_target()
@@ -28,6 +30,9 @@ class LLVMGenerator(object):
         self.run_time = None
 
     def generate(self, tree, emit, jit, use_optimizations, extra_args, input_file):
+        """
+        Entry point for LLVM generation. Writes out IR or executes code when complete
+        """
         start = datetime.datetime.utcnow()
         scope = self._setup(extra_args)
         tree.visit(self.module, scope, extra_args)
@@ -43,6 +48,9 @@ class LLVMGenerator(object):
             self._run()
 
     def finalize(self, use_optimizations):
+        """
+        Integrates optimizations passed in from command line
+        """
         llvm_ir = str(self.module)
         self.module = binding.parse_assembly(llvm_ir)
         self.module.verify()
@@ -140,20 +148,32 @@ class LLVMGenerator(object):
         return scope
         
     def _add_print_function(self, scope):
+        """
+        Include native print function
+        """
         voidptr_ty = ir.IntType(8).as_pointer()
         printf_ty = ir.FunctionType(ir.IntType(32), [voidptr_ty], var_arg=True)
         scope['print'] = ir.Function(self.module, printf_ty, name="printf")
 
     def _add_exit_function(self, scope):
+        """
+        Include native exit function
+        """
         intptr_ty = ir.IntType(32)
         exit_ty = ir.FunctionType(ir.VoidType(), [intptr_ty], var_arg=True)
         scope['exit'] = ir.Function(self.module, exit_ty, name="exit")
 
     def _write(self):
+        """
+        Write out LLVM IR to output file
+        """
         with open('output.ll', 'w') as output_file:
             output_file.write(str(self.module))
 
     def _run(self):
+        """
+        Execute code "just in time" (JIT)
+        """
         start = datetime.datetime.utcnow()
         self.engine.add_module(self.module)
         self.engine.finalize_object()
@@ -165,5 +185,3 @@ class LLVMGenerator(object):
         end = datetime.datetime.utcnow()
         logging.info('Exit Code: ' + str(res))
         self.run_time = end - start
-
-
