@@ -40,7 +40,6 @@ class Node(object):
         args = [ir.Constant(ir.IntType(32), 1)]
         builder.call(func, args)
 
-
 class Program(Node):
 
     def __init__(self, externs, funcs):
@@ -48,6 +47,7 @@ class Program(Node):
         self.funcs = funcs
         self._name = 'prog'
 
+        # Confirm that a "run" method is defined and valid in the code
         found_run = False
         for func in self.funcs.funcs:
             if func.globid == 'run':
@@ -76,7 +76,6 @@ class Program(Node):
     def get_functions(self):
         return self.funcs.funcs
 
-
 class ExternList(Node):
     """
     Parent node to hold list of all "extern" usages
@@ -99,7 +98,6 @@ class ExternList(Node):
         """
         for extern in self.externs:
             extern.visit(module, scope, extra_args)
-
 
 class Extern(Node):
     """
@@ -125,11 +123,13 @@ class Extern(Node):
         """
         Handles extern usages of the form: extern int arg(int);
         """
+        # Validate that passed args are not floats
         for arg in extra_args:
             if '.' in arg:
                 logging.error('Attempting to pass in float while using arg. Use argf for floats')
                 sys.exit(1)
 
+        # Add an argument and return type to the function
         arg_type = ir.IntType(32)
         function_type = ir.FunctionType(ir.IntType(32), [arg_type], var_arg=True)
         arg = ir.Function(module, function_type, name="arg")
@@ -168,7 +168,6 @@ class Extern(Node):
                 builder.ret(ir.Constant(ir.FloatType(), float(x)))
         builder.ret(ir.Constant(ir.FloatType(), 0.0))
 
-
 class FuncList(Node):
     """
     Parent node handling list of all functions
@@ -189,7 +188,6 @@ class FuncList(Node):
         for func in self.funcs:
             func.visit(module, scope)
 
-
 class Function(Node):
     """
     Models a single function definition
@@ -202,6 +200,7 @@ class Function(Node):
         self.vdecls = vdecls
         self._name = 'func'
 
+        # Ensure function definition is valid and not defined already
         if 'ref' in ret_type:
             logging.error('A function may not return a ref type.')
             sys.exit(1)
@@ -218,6 +217,7 @@ class Function(Node):
         """
         # Return type of the function
         llvm_ret_type = self._get_ir_type(self.ret_type)
+
         # Type of each argument in the function
         arguments = [arg.llvm_vtype for arg in self.vdecls.vars]
 
@@ -241,7 +241,6 @@ class Function(Node):
         if self.ret_type == 'void':
             builder.ret_void()
 
-
 class VDeclList(Node):
     """
     Parent node to handle a list of variable declarations
@@ -255,7 +254,6 @@ class VDeclList(Node):
 
     def add_vdecl(self, vdecl):
         self.vars.append(vdecl)
-
 
 class VariableDecl(Node):
     """
@@ -273,7 +271,6 @@ class VariableDecl(Node):
     @property
     def llvm_vtype(self):
         return self._get_ir_type(self.vtype)
-
 
 class StatementList(Node):
     """
@@ -296,7 +293,6 @@ class StatementList(Node):
         for statement in self.stmts:
             statement.visit(builder, module, block, scope)
 
-
 class Block(Node):
     """
     A block of code (within a function, if statement or loop)
@@ -311,11 +307,12 @@ class Block(Node):
         Visits each node of tree to translate to IR
         """
         self.count += 1
+
+        # Copy local scope so that additions in lower levels do not bubble up
         local_scope = {k:v for k,v in scope.items()}        
         if type(self.contents) == list and len(self.contents) == 0:
             return
         self.contents.visit(builder, module, block, local_scope)
-
 
 class IfStatement(Node):
     """
@@ -334,7 +331,6 @@ class IfStatement(Node):
         # Builds check for condition and gates statement behind true value
         with builder.if_then(condition) as conditional:
             self.stmt.visit(builder, module, block, scope)
-
 
 class IfElseStatement(Node):
     """
@@ -358,7 +354,6 @@ class IfElseStatement(Node):
             with otherwise:
                 self.else_stmt.visit(builder, module, block, scope)
 
-
 class WhileStatement(Node):
     """
     Handles a loop that executes while a condition is true
@@ -376,13 +371,14 @@ class WhileStatement(Node):
         block_builder = ir.IRBuilder(new_block)
         builder.branch(new_block)
 
+        # Check initial condition before entering loop
         condition = self.cond.visit(block_builder, module, block, scope)
         with block_builder.if_then(condition) as conditional:
             self.stmt.visit(block_builder, module, new_block, scope)
+
             # Allows re-evaluation of conditional statement at end of the loop
             block_builder.branch(new_block)
             builder.position_at_end(conditional)
-
 
 class BinOp(Node):
     """
@@ -399,12 +395,14 @@ class BinOp(Node):
         """
         Identifies the output type of the operation (could be bool or int)
         """
+        # Gather left and right hand side details
         left = self.lhs.get_vtype(local_scope).replace('ref ', '').replace('noalias ', '')
         right = self.rhs.get_vtype(local_scope).replace('ref ', '').replace('noalias ', '')
 
         self.left_vtype = left
         self.right_vtype = right
 
+        # Comparison operations result in a boolean output
         if self.op in ('lt', 'gt', 'eq', 'and', 'or'):
             self.vtype = 'bool'
             return self.vtype
@@ -425,6 +423,7 @@ class BinOp(Node):
         """
         Visits each node of tree to translate to IR.
         """
+        # Fully evaluate left and right hand sides first
         left = self.lhs.visit(builder, module, block, scope)
         right = self.rhs.visit(builder, module, block, scope)
 
@@ -609,7 +608,6 @@ class BinOp(Node):
 
         return builder.load(return_pointer)
 
-
 class ReturnStatement(Node):
     """
     Handles evaluation of return statement from a function.
@@ -628,11 +626,11 @@ class ReturnStatement(Node):
             builder.ret_void()
             return
 
+        # If return is a pointer, dereference value first
         result = self.exp.visit(builder, module, block, scope)
         if getattr(result.type, 'pointee', None) is not None:
             result = builder.load(result)
         builder.ret(result)
-
 
 class VDeclStatement(Node):
     """
@@ -649,7 +647,6 @@ class VDeclStatement(Node):
         value = self.exp.visit(builder, module, block, scope)
         builder.store(value, pointer)
 
-
 class PrintStatement(Node):
     """
     Handles native print statement for non-string literals
@@ -661,10 +658,12 @@ class PrintStatement(Node):
 
     @staticmethod
     def _setup(module, builder):
+        """
+        Boilerplate code to run print method
+        """
         if PrintStatement._is_setup:
             return
 
-        # Declare argument list
         voidptr_ty = ir.IntType(8).as_pointer()
         
         fmt = "%i \n\0"
@@ -682,13 +681,13 @@ class PrintStatement(Node):
     def visit(self, builder, module, block, scope):
         func = scope.get('print')
         self._setup(module, builder)
+
         # Call Print Function
         value = self.exp.visit(builder, module, block, scope)
         if getattr(value.type, 'pointee', None) is not None:
             value = builder.load(value)
         args = [PrintStatement.fmt_arg, value]
         builder.call(func, args)
-
 
 class PrintSLiteral(Node):
     """
@@ -701,6 +700,9 @@ class PrintSLiteral(Node):
 
     @classmethod
     def _setup(cls, module, builder):
+        """
+        Boilerplate code to run print for string literal method
+        """
         if PrintSLiteral._is_setup:
             return
 
@@ -737,7 +739,6 @@ class PrintSLiteral(Node):
         args = [self.fmt_arg, c_str]
         builder.call(func, args)
 
-
 class CastStatement(Node):
     """
     Handles cast of one type to another
@@ -746,7 +747,6 @@ class CastStatement(Node):
         self.casttype = a
         self.expr = b
         self._name = 'caststmt'
-
 
 class UOP(Node):
     """
@@ -780,7 +780,6 @@ class UOP(Node):
 
             return builder.neg(expr)
 
-
 class FuncCall(Node):
     """
     Handles calling of a function within a block
@@ -795,13 +794,16 @@ class FuncCall(Node):
         Visits each node of tree to translate to IR.
         """
         func = scope.get(self.globid)
+
         # Ensure function is within scope
         if func is None:
             logging.error('Attempting to use function before declaration: ' + self.globid)
             sys.exit(1)
+
+        # Evaluate all arguments before calling function
         args = [p.visit(builder, module, block, scope) for p in self.params]
 
-        # match up arguments with their index and derefernece pointers
+        # match up arguments with their index and dereference pointers
         for i, x in enumerate(args):
             pointer = getattr(func.args[i].type, 'pointee', None)
             arg_pointer = getattr(x.type, 'pointee', None)
@@ -814,7 +816,6 @@ class FuncCall(Node):
                 sys.exit(1)
 
         return builder.call(func, args)
-
 
 class Literal(Node):
     """
@@ -846,7 +847,6 @@ class Literal(Node):
             value = self.value
         return ir.Constant(self._get_ir_type(self.vtype), value)
 
-
 class VarId(Node):
     """
     Handles a usage of a variable in a statement
@@ -872,7 +872,6 @@ class VarId(Node):
         """
         variable = scope[self.var]
         return variable
-
 
 class Parser(object):
     """

@@ -110,7 +110,6 @@ class Lexer(object):
         'int', 'float', 'void', 'cint', 'bool'
     }
 
-
     def t_IDENTIFIER(self, t):
         """
         Used to distinguish between variable names, booleans and reserved keywords
@@ -120,11 +119,13 @@ class Lexer(object):
             t.type = 'LITERAL'
             return t
 
-        a = self.RESERVED.get(t.value)    # Check for reserved words
+        # Check for reserved words
+        a = self.RESERVED.get(t.value)    
         if a is not None:
             t.type = a
             return t
 
+        # Check if it's a native type, otherwise it's a user defined variable
         if t.value in self.TYPES:
             t.type = 'TYPE'
         else:
